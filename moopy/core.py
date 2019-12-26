@@ -27,6 +27,8 @@ import operator
 import functools
 import itertools
 import numpy as np
+from scipy.optimize import minimize, curve_fit
+from scipy.optimize.optimize import OptimizeResult, vecnorm
 from abc import ABCMeta, abstractmethod
 
 from cachetools import cached, TTLCache
@@ -36,6 +38,523 @@ cache2 = TTLCache(maxsize=10000, ttl=1000)
 LOGGER = logging.getLogger("MooPy")
 EPSILON = sys.float_info.epsilon
 POSITIVE_INFINITY = float("inf")
+
+
+class PSE(object):
+    def __init__(self):
+        self.funcs = None
+        self.limits = None
+        self.constraints = None
+        self.jac = None
+        self.finished = False
+
+    ###########################################################################################
+    # Curve fit functions and their derivatives
+    def first_poli_func(self, x, a, b):
+        return a + b * x
+
+    def der_first_poli_func(self, x, a, b):
+        return b
+
+    def second_poli_func(self, x, a, b, c):
+        return a + b * x + c * x ** 2
+
+    def der_second_poli_func(self, x, a, b, c):
+        return b + 2 * c * x
+
+    def third_poli_func(self, x, a, b, c, d):
+        return a + b * x + c * x ** 2 + d * x ** 3
+
+    def der_third_poli_func(self, x, a, b, c, d):
+        return b + 2 * c * x + 3 * d * x ** 2
+
+    def sine_func(self, x, a, b, c, d):
+        return a * (np.sin(2 * np.pi * x / b + 2 * np.pi / c)) + d
+
+    ###########################################################################################
+    # functions for Curve fitting
+    def do_curve_fit(self, ddata, xdata, params, pord=None):
+        if pord is None:
+            pord = self.fit_func
+        if pord == 'pol1':
+            return curve_fit(self.first_poli_func, ddata, xdata, params[:2])
+        elif pord == 'pol2':
+            return curve_fit(self.second_poli_func, ddata, xdata, params[:3])
+        elif pord == 'pol3':
+            return curve_fit(self.third_poli_func, ddata, xdata, params[:4])
+        elif pord == 'sine':
+            return curve_fit(self.sine_func, ddata, xdata, params[:4])
+
+    def get_params_ini(self, data, npar=None):
+        if npar is None:
+            npar = self.npar
+        if hasattr(data, '__len__'):
+            params = np.ones((len(data), npar))
+        else:
+            params = np.ones((1, npar))
+        params[:, 0] = data
+        return params
+
+    def get_npar(self, pord):
+        if pord == 'pol1':
+            return 2
+        elif pord == 'pol2':
+            return 3
+        elif pord == 'pol3':
+            return 4
+        elif pord == 'sine':
+            return 4
+
+    def get_pord(self, npar):
+        if npar == 2:
+            return 'pol1'
+        elif npar == 3:
+            return 'pol2'
+        elif npar == 4:
+            return 'pol3'
+        elif npar == 4:
+            return 'sine'
+
+    def apprd(self, d, params, pord=None):
+        if pord is None:
+            pord = self.fit_func
+        if pord == 'pol1':
+            return self.first_poli_func(d, params[:, 0], params[:, 1])
+        elif pord == 'pol2':
+            return self.second_poli_func(d, params[:, 0], params[:, 1], params[:, 2])
+        elif pord == 'pol3':
+            return self.third_poli_func(d, params[:, 0], params[:, 1], params[:, 2], params[:, 3])
+        elif pord == 'sine':
+            return self.sine_func(d, params[:, 0], params[:, 1], params[:, 2], params[:, 3])
+
+    def appdrd(self, d, params, pord=None):
+        if pord is None:
+            pord = self.fit_func
+        if pord == 'pol1':
+            return self.der_first_poli_func(d, params[:, 0], params[:, 1])
+        elif pord == 'pol2':
+            return self.der_second_poli_func(d, params[:, 0], params[:, 1], params[:, 2])
+        elif pord == 'pol3':
+            return self.der_third_poli_func(d, params[:, 0], params[:, 1], params[:, 2], params[:, 3])
+
+    def do_appr(self, ddata, xdata, params):
+        # Seclecting the curve fit function based on the number of data points.
+        if len(ddata) < self.npar:
+            npar = len(ddata)  # number of parameters
+        else:
+            npar = self.npar
+        pord = self.get_pord(npar)  # curve function type
+
+        # Do curve fit through x data based on d for each x_i
+        for i in range(self.ninp):
+            params[i, :npar], pcov = self.do_curve_fit(ddata, xdata[:, i], params[i, :], pord=pord)
+
+        return params, pord
+
+    ###########################################################################################
+    # Functionals
+    def method_info(self):
+        if self.prt_info:
+            print('Number of single function evaluations:', self.funcs.num_sing_eva)
+            print('Number of Jacobian evaluations:', self.jac.num_grad_eva)
+            print('Number of iterations:', self.it)
+            print('Number of Pareto points:', len(self.ds))
+
+        return [self.funcs.num_sing_eva, self.jac.num_grad_eva, self.it, len(self.ds)]
+
+    def get_dp(self, x):
+        return OptimizeResult(f=self.funcs.evaluate_funcs(x), x=x, g = self.constraints.evaluate_cons(x))
+
+    def get_act_bounds(self, dp):
+        return list(dp.x <= self.limits.lob + self.tol) + \
+               list(dp.x >= self.limits.upb - self.tol) + \
+               list(dp.g <= 0 + self.tol)
+
+    ###########################################################################################
+    # Calculate axtrapolation step
+    def dd_c(self, *args):
+        return self.dx
+
+    def dd_dx(self, drda, *args):
+        return np.dot(np.abs(drda), np.abs(self.dx)) / (vecnorm(drda) ** 2)
+
+    def dd_df(self, drda, dp, *args):
+        if not hasattr(dp, 'jac'):
+            dp.jac = self.jac.evaluate_jac(dp.x)
+        dfrda = np.dot(dp.jac, drda)
+        return np.dot(np.abs(dfrda), np.abs(self.dx)) / (vecnorm(dfrda) ** 2)
+
+    ###########################################################################################
+    # Checks
+    def check_x(self, x):
+        # Check input x
+        for i, y in enumerate(x <= self.limits.lob + self.tol):
+            if y:
+                x[i] = self.limits.lob[i]
+
+        for i, y in enumerate(x >= self.limits.upb - self.tol):
+            if y:
+                x[i] = self.limits.upb[i]
+
+        return x
+
+    def check_finished(self, dp):
+        if np.all(dp.f[0] <= self.ds[-1].f[0]) or np.all(dp.f[1] >= self.ds[-1].f[1]) \
+                or np.isclose(dp.f[1], self.ds[-1].f[1]):
+            return True
+
+    def check_finished2(self, dp):
+        if np.all((np.abs(self.ds_ini[1].x - dp.x)) < 0.1 * self.dx):
+            return True
+        if vecnorm(self.ds_ini[1].f - dp.f) < 0.001:
+            return True
+        if np.all(dp.f > self.ds_ini[1].f):
+            return True
+
+    def check_nonsmooth(self, dp):
+        if self.it == 1:
+            self.act_bounds = self.get_act_bounds(dp)
+            return False
+        else:
+            return self.act_bounds != self.get_act_bounds(dp)
+
+    ###########################################################################################
+    # SOOP function
+    def SOOP_EC(self, x):
+
+        dp = self.get_dp(x)
+
+        # g_i(x) >= 0, i = 1, ..., m
+
+        con = [{'type': 'ineq', 'fun': lambda x: dp.f[0] - self.funcs.single_func(0)(x),}]
+        # if self.jac.jac_ini == '2-point' or self.jac.jac_ini == '3-point': %%%%%%%%'jac': self.jac.single_grad_neg(1)
+        #     con[0]['jac'] = self.jac.jac_ini jac=self.jac.single_grad(0)
+
+        cons = self.constraints.add_constraint(con)
+
+        res = minimize(self.funcs.single_func(1), dp.x, bounds=self.limits.lims_ini,
+                       constraints=cons, )
+
+        if np.all(dp.x == res.x):
+            return dp
+        else:
+            return self.get_dp(res.x)
+
+    def finish_PSE(self, dp):
+
+        if self.finish_min:
+            res = minimize(self.funcs.single_func(1), self.ds[-1].x, bounds=self.limits.lims_ini,
+                            constraints=self.constraints.con_ini, jac=self.jac.single_grad(1))
+
+            if not res.success:
+                raise ValueError
+
+            if np.all(self.ds[-1].x == res.x):
+                return self.ds, self.method_info()
+            else:
+                self.ds.append(self.get_dp(res.x))
+
+        return self.ds, self.method_info()
+
+    def finish_PSE2(self, dp):
+        # self.ds.append(dp)
+        # self.ds.append(self.ds_ini[1])
+        return self.ds, self.method_info()
+
+    ###########################################################################################
+    # PSE initialization
+    def solve(self, funs, x_ini, ds_ini, lims, cons, jac, options, *args, **kwargs):
+
+        self.ninp = len(ds_ini[0][0])
+        if not isinstance(funs, FunctionWrapper):
+            self.funcs = FunctionWrapper(funs)
+        else:
+            self.funcs = funs
+        if not isinstance(lims, LimitWrapper):
+            self.limits = LimitWrapper(lims, self.ninp)
+        else:
+            self.limits = lims
+        if not isinstance(cons, ConstraintWrapper):
+            self.constraints = ConstraintWrapper(cons)
+        else:
+            self.constraints = cons
+        if not isinstance(jac, JacobianWrapper):
+            self.jac = JacobianWrapper(self.funcs.funcs_ini, jac)
+        else:
+            self.jac = jac
+
+        # self.ds_ini = []
+        # for xi in ds_ini:
+        #     self.ds_ini.append(self.get_dp(xi[0]))
+
+        if options is None:
+            self.options = {}
+        else:
+            self.options = dict(options)
+
+        self.fit_func = self.options.pop('fit_func', 'pol2')
+        self.npar = self.get_npar(self.fit_func)
+        self.nsamp = self.options.pop('nsample', 5)
+        self.Npar = self.options.pop('Npar', 20)
+        self.tol = self.options.pop('tol', 1e-6)
+        self.finish_min = self.options.pop('finish_min', True)
+        self.prt_info = self.options.get('print_info', False)
+        self.prt_steps = self.options.get('print_steps', False)
+
+        dd_method = self.options.pop('dd_method', {})
+        if not isinstance(dd_method, dict):
+            dd_method = dict(dd_method)
+
+        if not dd_method:
+            self.dx = (self.limits.upb - self.limits.lob) / self.Npar
+            self.cal_dd = self.dd_dx
+        elif 'c' in dd_method:
+            self.dx = dd_method['c']
+            self.cal_dd = self.dd_c
+        elif 'dx'in dd_method:
+            self.dx = dd_method['dx']
+            self.cal_dd = self.dd_dx
+        elif 'df'in dd_method:
+            self.dx = dd_method['df']
+            self.cal_dd = self.dd_df
+        else:
+            raise ValueError
+
+        self.d1 = self.options.pop('d1', 0.01)
+        self.d2 = self.options.pop('d2', 0.01)
+
+        SOOP_options = self.options.pop('SOOP_options', {})
+        if not isinstance(SOOP_options, dict):
+            SOOP_options = dict(SOOP_options)
+
+        if not SOOP_options:
+            self.perform_SOOP = self.SOOP_EC
+            self.restricted = False
+        else:
+            if 'SOOP_method' in SOOP_options:
+                SOOP_method = SOOP_options['SOOP_method']
+                if SOOP_method == 'NC':
+                    self.perform_SOOP = self.SOOP_EC
+                elif callable(SOOP_method):
+                    self.perform_SOOP = SOOP_method
+                else:
+                    self.perform_SOOP = self.SOOP_EC
+            else:
+                self.perform_SOOP = self.SOOP_EC
+            if 'Restricted' in SOOP_options:
+                self.restricted = SOOP_options['Restricted']
+            else:
+                self.restricted = False
+
+
+        # dp0 = self.get_dp(x_ini)
+        dp0 = self.get_dp(ds_ini[0][0])
+
+
+        return self.__PSE(dp0)
+
+    ###########################################################################################
+    # PSE method
+    def __PSE(self, dp):
+
+        self.ds = []
+        self.ds.append(dp)
+        self.it = 1
+
+        while not self.finished:
+            if self.it == 1:
+
+                ddata = [0]
+                xda = [dp.x]
+                params = self.get_params_ini(dp.x, npar=self.npar)
+
+                jac = self.jac.evaluate_jac(dp.x)
+
+                x_es = dp.x - self.d1 * (jac[1]/vecnorm(jac[1]))
+
+                if self.prt_steps:
+                    print(self.it)
+                    print(dp.x - (jac[1] / vecnorm(jac[1])))
+                    print(x_es)
+
+            else:
+                # Update curve fit data.
+                xda.append(self.ds[-1].x)
+                ddata.append(ddata[-1] + vecnorm(xda[-2] - xda[-1]))
+                if len(xda) > self.nsamp:
+                    del xda[0]
+                    del ddata[0]
+                    params[:, 0] = xda[0]
+                xdata = np.asarray(xda, dtype=np.float64)
+
+                # Do curve fitting
+                params, pord = self.do_appr(ddata, xdata, params)
+
+                # Decrease the first step size in case of inadequate approximation.
+                if len(ddata) < self.npar:
+                    dd = 0.1*self.d2
+                else:
+                    dd = self.d2
+
+                # Get x_es at approximated distance.
+                x_es = self.apprd((ddata[-1] + dd), params, pord=pord)
+
+                if self.prt_steps:
+                    print(self.it)
+                    print(ddata)
+                    print(xdata)
+                    print(params)
+                    print(x_es)
+
+            # Define and solve SOOP
+            x_es = self.check_x(x_es)
+            dp = self.perform_SOOP(x_es)
+
+            if self.check_finished(dp):
+                return self.finish_PSE2(dp)
+
+            elif self.check_nonsmooth(dp):
+                self.it = 1
+                self.ds.append(dp)
+            else:
+                self.ds.append(dp)
+
+                # Iteration count and check for infinite loops
+                self.it += 1
+                if self.it > 300:
+                    self.finished = True
+
+        return self.ds, self.method_info()
+
+
+class NC(object):
+    def __init__(self):
+        self.funcs = None
+        self.limits = None
+        self.constraints = None
+        self.jac = None
+        self.finished = False
+
+    ###########################################################################################
+    # Functionals
+    def method_info(self):
+        if self.prt_info:
+            print('Number of single function evaluations:', self.funcs.num_sing_eva)
+            print('Number of Jacobian evaluations:', self.jac.num_grad_eva)
+            print('Number of iterations:', self.it)
+            print('Number of Pareto points:', len(self.ds))
+
+        return [self.funcs.num_sing_eva, self.jac.num_grad_eva, self.it, len(self.ds)]
+
+
+    def get_dp(self, x):
+        return OptimizeResult(f=self.funcs.evaluate_funcs(x), x=x, g = self.constraints.evaluate_cons(x))
+
+    ###########################################################################################
+    # SOOP function
+    def perform_SOOP_NC(self, dp):
+
+        con = [{'type': 'ineq', 'fun': lambda x: -np.dot(self.v[0], (self.funcs.evaluate_funcs(x) - self.p[self.it]))}]
+        if self.jac.jac_ini == '2-point' or self.jac.jac_ini == '3-point':
+            con[0]['jac'] = self.jac.jac_ini
+        cons = self.constraints.add_constraint(con)
+
+        res = minimize(self.funcs.single_func(1), dp.x, bounds=self.limits.lims_ini,
+                       constraints=cons, )
+
+        # jac = self.jac.single_grad(1)
+
+        if not res.success:
+            x_try = self.limits.upb * np.random.random_sample(dp.x.shape) - self.limits.lob
+            res = minimize(self.funcs.single_func(1), x_try, bounds=self.limits.lims_ini,
+                           constraints=cons, jac=self.jac.single_grad(1))
+            if not res.success:
+                pass
+
+        if np.all(dp.x == res.x):
+            return dp
+        else:
+            return self.get_dp(res.x)
+
+    ###########################################################################################
+    # NC initialization
+    def solve(self, funs, ds_ini, lims, cons, jac, options, *args, **kwargs):
+
+        self.ninp = len(ds_ini[0][0])
+        if not isinstance(funs, FunctionWrapper):
+            self.funcs = FunctionWrapper(funs)
+        else:
+            self.funcs = funs
+        if not isinstance(lims, LimitWrapper):
+            self.limits = LimitWrapper(lims, self.ninp)
+        else:
+            self.limits = lims
+        if not isinstance(cons, ConstraintWrapper):
+            self.constraints = ConstraintWrapper(cons)
+        else:
+            self.constraints = cons
+        if not isinstance(jac, JacobianWrapper):
+            self.jac = JacobianWrapper(self.funcs.funcs_ini, jac)
+        else:
+            self.jac = jac
+
+        if options is None:
+            self.options = {}
+        else:
+            self.options = dict(options)
+
+        self.Npar = int(self.options.pop('delta', 20))
+        self.tol = self.options.pop('tol', 1e-6)
+        self.prt_info = self.options.get('print_info', False)
+
+        self.ds_ini = []
+        for xi in ds_ini:
+            self.ds_ini.append(self.get_dp(xi[0]))
+
+        self.v = []
+        for i, dp in enumerate(self.ds_ini):
+            if i != 1:
+                self.v.append(self.ds_ini[1].f - dp.f)
+
+        self.delta = 1/self.Npar
+        a1 = 1.
+        a2 = 0.
+        self.p = []
+        for i in range(self.Npar):
+            self.p.append(a1 * self.ds_ini[0].f + a2 * self.ds_ini[1].f)
+            a1 -= self.delta
+            a2 += self.delta
+
+        dp0 = self.ds_ini[0]
+        self.ds = []
+        self.it = 1
+
+        return self.__NC(dp0)
+
+    ###########################################################################################
+    # PSE method
+    def __NC(self, dp):
+
+        self.ds.append(dp)
+
+        # Main iteration process
+        # While the section is not finished additional points should be added to data set.
+        while not self.finished:
+
+            # Define and solve SOOP
+            dp_es = self.perform_SOOP_NC(self.ds[-1])
+
+            # Add point to data set
+            self.ds.append(dp_es)
+
+            # Iteration count and check for infinite loops
+            self.it += 1
+            if self.it == self.Npar:
+                self.finished = True
+                self.ds.append(self.ds_ini[-1])
+
+        return self.ds, self.method_info()
+
 
 ##############################################################################
 # Tools (classes)
