@@ -1,2 +1,6 @@
 pip==19.3.1
 wheel==0.33.1
+twine==3.1.1
+numpy==1.18.0
+scipy==1.4.1
+cachetools==4.0.0
