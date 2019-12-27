@@ -17,7 +17,7 @@
 # along with MooPy.  If not, see <http://www.gnu.org/licenses/>.
 from __future__ import absolute_import, division, print_function
 
-from .moopy import *
+from .test import *
 from .core import *
 from .show_results import *
 from .test_cases import *
