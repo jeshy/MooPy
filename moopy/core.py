@@ -263,7 +263,7 @@ class PSE(object):
 
     ###########################################################################################
     # PSE initialization
-    def solve(self, funs, x_ini, ds_ini, lims, cons, jac, options, *args, **kwargs):
+    def solve(self, funs, ds_ini, lims, cons, jac, options, *args, **kwargs):
 
         self.ninp = len(ds_ini[0][0])
         if not isinstance(funs, FunctionWrapper):

@@ -4,3 +4,4 @@ twine==3.1.1
 numpy==1.18.0
 scipy==1.4.1
 cachetools==4.0.0
+matplotlib==3.1.2

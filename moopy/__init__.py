@@ -19,5 +19,7 @@ from __future__ import absolute_import, division, print_function
 
 from .moopy import *
 from .core import *
+from .show_results import *
+from .test_cases import *
 
-__version__ = "0.0.1" # Update setup.py if the version changes!
+__version__ = "0.0.3" # Update setup.py if the version changes!
