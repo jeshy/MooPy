@@ -7,7 +7,7 @@ requirements = []
 
 setup(
     name="moopy",
-    version="0.0.3", # Update __init__.py if the version changes!
+    version="0.0.4", # Update __init__.py if the version changes!
     author="Derk Kappelle",
     author_email="20672345+dkappelle@users.noreply.github.com",
     description="A package for Multi-Objective Optimization tools",
