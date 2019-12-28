@@ -1,87 +1,63 @@
 # start_imports
-from MooPy.moopy import PSE, test_cases, show_results
+from MooPy.moopy import PSE, show_results
+import numpy as np
 # end_imports
 
 #### -- Test problem formulation -- ####
-#          sim_lin
-#          sim_lin_2
-#          sim_nlin
-#          sim_lim
-#          sim_lim_2
-#          sim_con
-#          sim_con_2
-#          lim_con_nat
+# Define objective functions
+def fun1(x):
+    return (x[0] - 3)**2 + (x[1] - 3)**2 + 1
 
-#          BaK
-#          CaH
-#          Sf1
-#          FFf
-#          LZf4
-#          ZDT1
-#          ZDT1_extra
-#          ZDT2
-#          ZDT2_extra
-#          ZDT4
-#          ZDT6
-#          OaK
-#          CPT1
-#          CEx
-#          Tf4
+def fun2(x):
+    return (x[0] - 1)**2 + (x[1] - 1)**2 + 1
 
-case = 'LZf4'
+funs = [fun1, fun2]
 
-plot_res_Pf = [True, False, False, False, False]
-pr_res_Pf = [True, True, True, True, True]
+# Limits
+limits = ([0, 5], [0, 5])
 
-plot_res_Px = [True, False, False, False, False]
-pr_res_Px = [True, True, True, True, True]
+# Constraints
+constraints = [{'type': 'ineq', 'fun': lambda x: -(0.1*x[0]**2 - x[1] - 0.1)}]
 
-funs, x_ini, ds_ini, limits, constraints, jac, moo_options = test_cases.case(case)
+# Initial Data set
+ds_ini = [np.array([3.0, 3.0]),
+          np.array([1.0, 1.0])]
 
-# ds_ini[1][0] = x_ini
-revers = moo_options.pop('reversed', False)
-print_info = False
-moo_options['print_info'] = print_info
+# Jacobian
+def jac1(x):
+    return np.asarray([2 * (x[0] - 3), 2 * (x[1] - 3)], dtype=float)
+
+def jac2(x):
+    return np.asarray([2 * (x[0] - 1), 2 * (x[1] - 1)], dtype=float)
+
+jac = [jac1, jac2]
+
+# MOO method of updating sections
+moo_options = {}
+
 
 ### -- Start main -- ####
 # --------------------------------------------
 print('--------- Start PSE method -----------')
 
-if revers:
-    funs.revers()
-    ds_ini = list(reversed(ds_ini))
-    jac.revers()
+PSE_method = PSE(funs=funs,
+                 ds_ini=ds_ini,
+                 lims=limits,
+                 cons=constraints,
+                 jac=jac,
+                 options=moo_options,
+                 )
+res_PSE, info_PSE = PSE_method.solve()
 
-
-PSE_method = PSE()
-# Solve the MOOP with the PSE method
-res_PSE, info_PSE = PSE_method.solve(funs=funs,
-                                     ds_ini=ds_ini,
-                                     lims=limits,
-                                     cons=constraints,
-                                     jac=jac,
-                                     options=moo_options,
-                                     )
-
-info_PSE.append(show_results.Eveness(res_PSE))
-if print_info:
-    print('Eveness:', "%.5f" % info_PSE[4])
 
 #### -- Show results -- ####
 # Show output MOOP solver
-if plot_res_Pf[0]:
-    plot = show_results.ShowPareto()
-    plot.output(res_PSE, opt=1)
-if pr_res_Pf[0]:
-    show_results.print_Pf(res_PSE)
-
-if plot_res_Px[0]:
-    plot = show_results.ShowPareto()
-    plot.input(res_PSE, opt=1)
-if pr_res_Px[0]:
-    show_results.print_Px(res_PSE)
-
-print('PSE &', info_PSE[0], '&', info_PSE[3] , '&', "%.5f" % info_PSE[4], '\\\\')
+plot = show_results.ShowPareto()
+plot.output(res_PSE, opt=1)
+show_results.print_Pf(res_PSE)
+plot = show_results.ShowPareto()
+plot.input(res_PSE, opt=1)
+show_results.print_Px(res_PSE)
 
 # --------------------------------------------
 print('--------- End PSE method -----------')
