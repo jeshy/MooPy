@@ -90,8 +90,8 @@ def sim_lin():  # Simple linear
     constraints = None
 
     # Initial Data set
-    ds_ini = [[np.array([3.0, 3.0]), 0],
-              [np.array([1.0, 1.0]), 1]]
+    ds_ini = [np.array([3.0, 3.0]),
+              np.array([1.0, 1.0])]
 
     # Jacobian
     def jac1(x):

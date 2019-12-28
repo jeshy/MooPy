@@ -17,7 +17,7 @@
 # along with MooPy.  If not, see <http://www.gnu.org/licenses/>.
 
 """
-Unified interfaces to a priori MOOP methods.
+Unified interfaces to "a priori" MOOP methods.
 
 Functions
 ---------
@@ -34,10 +34,11 @@ from warnings import warn
 
 import numpy as np
 
-from .core import PSE, NC
+from .core import WS, EC, NC, PSE, PSEVariableStep
 
 
 def solve_moop():
+    raise NotImplementedError("method not implemented yet")
     pass
 
 
@@ -134,24 +135,61 @@ def solve_boop(funs, ds_ini=None, limits=None, constraints=None, jacobian=None,
     else:
         options = dict(options)
 
+    if meth == 'ws':
+        WS_method = WS(funs=funs,
+                       ds_ini=ds_ini,
+                       lims=limits,
+                       cons=constraints,
+                       jac=jacobian,
+                       options=options,
+                       )
+
+        return WS_method.solve()
+
+    if meth == 'ec':
+        EC_method = EC(funs=funs,
+                       ds_ini=ds_ini,
+                       lims=limits,
+                       cons=constraints,
+                       jac=jacobian,
+                       options=options,
+                       )
+
+        return EC_method.solve()
+
     if meth == 'nc':
-        NC_method = NC()
-        return NC_method.solve(funs=funs,
-                                 ds_ini=ds_ini,
-                                 lims=limits,
-                                 cons=constraints,
-                                 jac=jacobian,
-                                 options=options,
-                                 )
+        NC_method = NC(funs=funs,
+                       ds_ini=ds_ini,
+                       lims=limits,
+                       cons=constraints,
+                       jac=jacobian,
+                       options=options,
+                       )
+
+        return NC_method.solve()
+
     elif meth == 'pse':
-        PSE_method = PSE()
-        return PSE_method.solve(funs=funs,
-                               ds_ini=ds_ini,
-                               lims=limits,
-                               cons=constraints,
-                               jac=jacobian,
-                               options=options,
-                               )
+        PSE_method = PSE(funs=funs,
+                       ds_ini=ds_ini,
+                       lims=limits,
+                       cons=constraints,
+                       jac=jacobian,
+                       options=options,
+                       )
+
+        return PSE_method.solve()
+
+    elif meth == 'psevariablestep':
+        PSE2_method = PSEVariableStep(funs=funs,
+                       ds_ini=ds_ini,
+                       lims=limits,
+                       cons=constraints,
+                       jac=jacobian,
+                       options=options,
+                       )
+
+        return PSE2_method.solve()
+
     else:
         raise ValueError('Unknown solver %s' % method)
 
