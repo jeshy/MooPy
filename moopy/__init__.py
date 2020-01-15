@@ -23,4 +23,4 @@ from ._solve import *
 from .show_results import *
 from .test_cases import *
 
-__version__ = "0.0.4" # Update setup.py if the version changes!
+__version__ = "0.0.5" # Update setup.py if the version changes!

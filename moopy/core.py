@@ -205,10 +205,10 @@ class MultipleRun(Problem):
         while not self.condition(self) and self.it < self.Npar - 1:
 
             # Define and solve SOOP
-            dp_es = self.perform_SOOP(self.ds[-1])
+            dp = self.perform_SOOP(self.ds[-1])
 
             # Add point to data set
-            self.ds.append(dp_es)
+            self.ds.append(dp)
 
             # Iteration count and check for infinite loops
             self.it += 1
