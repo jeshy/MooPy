@@ -29,12 +29,7 @@ from __future__ import absolute_import, division, print_function
 
 __all__ = ['solve_moop', 'solve_boop']
 
-
-from warnings import warn
-
-import numpy as np
-
-from .core import WS, EC, NC, PSE, PSEVariableStep
+from .core import WS, EC, NC
 
 
 def solve_moop():
@@ -168,27 +163,6 @@ def solve_boop(funs, ds_ini=None, limits=None, constraints=None, jacobian=None,
 
         return NC_method.solve()
 
-    elif meth == 'pse':
-        PSE_method = PSE(funs=funs,
-                       ds_ini=ds_ini,
-                       lims=limits,
-                       cons=constraints,
-                       jac=jacobian,
-                       options=options,
-                       )
-
-        return PSE_method.solve()
-
-    elif meth == 'psevariablestep':
-        PSE2_method = PSEVariableStep(funs=funs,
-                       ds_ini=ds_ini,
-                       lims=limits,
-                       cons=constraints,
-                       jac=jacobian,
-                       options=options,
-                       )
-
-        return PSE2_method.solve()
 
     else:
         raise ValueError('Unknown solver %s' % method)

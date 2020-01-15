@@ -38,7 +38,7 @@ test_case = 'sim_lin'
 #          PSE
 #          PSEVariableStep
 
-method = 'PSEVariableStep'
+method = 'WS'
 
 funs, x_ini, ds_ini, limits, constraints, jac, moo_options = test_cases.case(test_case)
 

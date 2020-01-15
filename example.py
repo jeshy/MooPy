@@ -1,5 +1,5 @@
 # start_imports
-from MooPy.moopy import PSE, show_results
+from MooPy.moopy import WS, show_results
 import numpy as np
 # end_imports
 
@@ -38,28 +38,28 @@ moo_options = {}
 
 ### -- Start main -- ####
 # --------------------------------------------
-print('--------- Start PSE method -----------')
+print('--------- Start WS method -----------')
 
-PSE_method = PSE(funs=funs,
-                 ds_ini=ds_ini,
-                 lims=limits,
-                 cons=constraints,
-                 jac=jac,
-                 options=moo_options,
-                 )
-res_PSE, info_PSE = PSE_method.solve()
+WS_method = WS(funs=funs,
+                ds_ini=ds_ini,
+                lims=limits,
+                cons=constraints,
+                jac=jac,
+                options=moo_options,
+                )
+res_WS, info_WS = WS_method.solve()
 
 
 #### -- Show results -- ####
 # Show output MOOP solver
 plot = show_results.ShowPareto()
-plot.output(res_PSE, opt=1)
-show_results.print_Pf(res_PSE)
+plot.output(res_WS, opt=1)
+show_results.print_Pf(res_WS)
 plot = show_results.ShowPareto()
-plot.input(res_PSE, opt=1)
-show_results.print_Px(res_PSE)
+plot.input(res_WS, opt=1)
+show_results.print_Px(res_WS)
 
 # --------------------------------------------
-print('--------- End PSE method -----------')
+print('--------- End WS method -----------')
 print('')
 
